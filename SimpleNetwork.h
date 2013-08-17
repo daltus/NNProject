@@ -19,9 +19,9 @@ using namespace std;
 
 typedef enum {INPUT, HIDDEN, OUTPUT} NodeType;
 
-const double WEIGHT_CONSTANT = 12;
-const double RELAX_CONSTANT = .1;
-const int MAX_STEPS = 10;
+const double WEIGHT_CONSTANT = 2;
+const double RELAX_CONSTANT = 1;
+const int MAX_STEPS = 2000;
 
 typedef struct SimpleNode
 {

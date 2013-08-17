@@ -143,6 +143,10 @@ int createSimpleNetwork(SimpleNetwork* nn, int inputNodes, int hiddenNodes, int 
     return 0;
 }
 
+/*
+ * This function updates the curvalues in the network. Note this functions devines the output of input nodes as input values
+ * into the network.
+ */
 int updateSimpleNetworkCurVals(SimpleNetwork * nn, double * inputs, int numInputs){
     
     if(nn->inputSize != numInputs)
@@ -164,6 +168,7 @@ int updateSimpleNetworkCurVals(SimpleNetwork * nn, double * inputs, int numInput
         tempcurval = 0;
         for(j = 0; j < nn->hiddenList[i]->numInEdges; j++)
         {
+            
             tempcurval += nn->hiddenList[i]->inEdges[j]->simpleWeight*(nn->hiddenList[i]->inEdges[j]->startNode->curValue);
         }
         
@@ -188,11 +193,13 @@ int updateSimpleNetworkCurVals(SimpleNetwork * nn, double * inputs, int numInput
     return 0;
 }
 
-double updateSimpleNetworkWeights(SimpleNetwork * nn, double * desiredInputs, int numDesiredInputs, double * desiredOutputs, int numDesiredOutputs){
-    int stepNumber = 0;
-    double totalError;
-    double currentError;
-    double tempDelta;
+/*
+ * This function updates the weights of the network based on an input-output pair. The weights are adjusted once.
+ * For full training, this function must be called multiple times until it returns -1 as the network error.
+ */
+double updateSimpleNetworkWeights(SimpleNetwork * nn, double * desiredInputs, int numDesiredInputs, double * desiredOutputs, int numDesiredOutputs)
+{
+    
     if ( numDesiredOutputs != nn->outputSize)
     {
         printf("The number of desired outputs doesn't match the number of outputs in the network. Consider revising.\n");
@@ -204,89 +211,98 @@ double updateSimpleNetworkWeights(SimpleNetwork * nn, double * desiredInputs, in
         printf("The number of desired inputs doesn't match the number of inputs in the network. Consider revising.\n");
         exit(1);
     }
+
+    int o;
+    int h;
+    int i;
+    double outputError;
+    outputError = 0;
     
-    while (1) {
-        updateSimpleNetworkCurVals(nn, desiredInputs, numDesiredInputs);
-        totalError = 0;
-        currentError = 0;
-        tempDelta = 0;
-        for(int i = 0; i < nn->outputSize; i++)
-        {
-            currentError = (hardSigmoid(nn->outputList[i]->curValue) - desiredOutputs[i])/desiredOutputs[i];
-            if(currentError < 0)
-                totalError += (-1)*currentError;
-            else
-                totalError += currentError;
-            
-        }
-        
-        if (totalError < .05)
-            break;
-        else if(stepNumber > MAX_STEPS)
-            break;
-        else
-        {
-            printf("The current Error is : %f\n", totalError);
-            printf("The current step number is: %d\n", stepNumber);
-            stepNumber++;
-            // logic to fix weights
-            for(int i = 0; i < nn->outputSize; i++)
-            {
-                for(int j = 0; j < nn->outputList[i]->numInEdges; j++)
-                {
-                    tempDelta = 2*(hardSigmoid(nn->outputList[i]->curValue)-desiredOutputs[i])*sigmoidDerivative(nn->outputList[i]->curValue, 1)*(nn->outputList[i]->inEdges[j]->startNode->curValue);
-                    tempDelta = weightDelta(pow(hardSigmoid(nn->outputList[i]->curValue)-desiredOutputs[i], 2), tempDelta);
-                    nn->outputList[i]->inEdges[j]->nextWeight += tempDelta;
-                    printf("Temp Delta: %f\n", tempDelta);
-                }
-            }
-            
-            for(int i = 0; i < nn->outputSize; i++)
-            {
-                for(int j = 0; j < nn->outputList[i]->numInEdges; j++)
-                {
-                    nn->outputList[i]->inEdges[j]->simpleWeight = nn->outputList[i]->inEdges[j]->nextWeight;
-                }
-            }
-        }
-        
+    updateSimpleNetworkCurVals(nn, desiredInputs, numDesiredInputs);
+    
+    //calculate error of the outputs of the network
+    for(o = 0; o < nn->outputSize; o++)
+    {
+        outputError += pow((hardSigmoid(nn->outputList[o]->curValue)-desiredOutputs[o]), 2);
     }
-    return 0;
+    
+    if(outputError < .001)
+        return -1;
+    
+    // update weights and biases of network
+    for(o = 0; o < nn->outputSize; o++)
+    {
+        nn->outputList[o]->bias +=(-1)*RELAX_CONSTANT*2*(hardSigmoid(nn->outputList[o]->curValue) - desiredOutputs[o])*sigmoidDerivative(nn->outputList[o]->curValue, 1);
+        
+        for(h = 0; h < nn->outputList[o]->numInEdges; h++)
+        {
+            nn->outputList[o]->inEdges[h]->nextWeight += (-1)*RELAX_CONSTANT*2*(hardSigmoid(nn->outputList[o]->curValue) - desiredOutputs[o])*sigmoidDerivative(nn->outputList[o]->curValue, 1)*hardSigmoid(nn->outputList[o]->inEdges[h]->startNode->curValue);
+        }
+    }
+    
+    for(o = 0; o < nn->outputSize; o++)
+    {
+        for(h = 0; h < nn->outputList[o]->numInEdges; h++)
+        {
+            nn->outputList[o]->inEdges[h]->startNode->bias += (-1)*RELAX_CONSTANT*2*(hardSigmoid(nn->outputList[o]->curValue) - desiredOutputs[o])*sigmoidDerivative(nn->outputList[o]->curValue, 1)*nn->outputList[o]->inEdges[h]->simpleWeight*sigmoidDerivative(nn->outputList[o]->inEdges[h]->startNode->curValue, 1);
+
+            for(i = 0; i < nn->outputList[o]->inEdges[h]->startNode->numInEdges; i++)
+            {
+                nn->outputList[o]->inEdges[h]->startNode->inEdges[i]->nextWeight += (-1)*RELAX_CONSTANT*2*(hardSigmoid(nn->outputList[o]->curValue) - desiredOutputs[o])*sigmoidDerivative(nn->outputList[o]->curValue, 1)*nn->outputList[o]->inEdges[h]->simpleWeight*sigmoidDerivative(nn->outputList[o]->inEdges[h]->startNode->curValue, 1)*hardSigmoid(nn->outputList[o]->inEdges[h]->startNode->inEdges[i]->startNode->curValue);
+            }
+        }
+    }
+    
+    for(o = 0; o < nn->outputSize; o++)
+    {
+        for(h = 0; h < nn->outputList[o]->numInEdges; h++)
+        {
+            nn->outputList[o]->inEdges[h]->simpleWeight = nn->outputList[o]->inEdges[h]->nextWeight;
+        }
+    }
+    
+    
+    for(o = 0; o < nn->outputSize; o++)
+    {
+        for(h = 0; h < nn->outputList[o]->numInEdges; h++)
+        {
+            for(i = 0; i < nn->outputList[o]->inEdges[h]->startNode->numInEdges; i++)
+            {
+                nn->outputList[o]->inEdges[h]->startNode->inEdges[i]->simpleWeight = nn->outputList[o]->inEdges[h]->startNode->inEdges[i]->nextWeight;
+            }
+        }
+    }
+    
+    return outputError;
 }
 
-double weightDelta(double error, double m){
-    double y = 0;
-    if ( m != 0)
-        y = (-1)*(RELAX_CONSTANT)*error/m;
-    else
-        y = .001;
-    
-    return y;
-    
-}
-
+/*
+ * This function applies a hardlimited sigmoid functions to an input argument.
+ */
 double hardSigmoid(double x){
     
     double y = (1/(1+exp(-1*x)));
     
-    if(y < .1)
+    if(y < .05)
         y =  0;
-    else if( y > .9)
+    else if( y > .95)
         y = 1;
     return y;
     
 }
 
+/*
+ * This function applies a normal sigmoid function to the input.
+ */
 double sigmoid(double x){
     double y = (1/(1+exp(-1*x)));
     return y;
 }
 
+/*
+ * This function applies the derivative of the sigmoid to the input.
+ */
 double sigmoidDerivative(double x, int n){
     double y = sigmoid(x)*(1-sigmoid(x));
     return y;
 }
-
-
-
-
